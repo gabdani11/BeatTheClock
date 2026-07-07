@@ -1,0 +1,15 @@
+{
+  "name": "@leetcode-timer/core",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Core timer logic and analytics dashboard state library",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
