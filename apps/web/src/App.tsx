@@ -125,6 +125,29 @@ const DEVELOPER_QUOTES = [
   "Clean code always looks like it was written by someone who cares."
 ];
 
+const LogoIconSvg = () => (
+  <svg viewBox="0 0 40 40" style={{ width: '22px', height: '22px', marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }}>
+    {Array.from({ length: 12 }).map((_, i) => {
+      const angle = (i * 360) / 12;
+      return (
+        <line
+          key={i}
+          x1="20"
+          y1="5"
+          x2="20"
+          y2="11"
+          transform={`rotate(${angle} 20 20)`}
+          stroke="currentColor"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+        />
+      );
+    })}
+  </svg>
+);
+
+
+
 
 export default function App() {
   // Navigation screen
@@ -133,6 +156,14 @@ export default function App() {
   // App-wide settings
   const [focusMode, setFocusMode] = useState<boolean>(false);
   const [soundOn, setSoundOn] = useState<boolean>(true);
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('@leetcode-timer/theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  const [learningMode, setLearningMode] = useState<boolean>(false);
+  const [learningPhase, setLearningPhase] = useState<'none' | 'solve_yourself' | 'get_tips' | 'review_solution' | 'recall_timer'>('none');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [customMinutes, setCustomMinutes] = useState<number>(30);
   const [randomQuote, setRandomQuote] = useState<string>(DEVELOPER_QUOTES[0]);
   const [confirmClear, setConfirmClear] = useState<boolean>(false);
@@ -188,6 +219,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // Sync Dark Theme class and localStorage
+  useEffect(() => {
+    localStorage.setItem('@leetcode-timer/theme', darkMode ? 'dark' : 'light');
+    if (darkMode) {
+      document.documentElement.classList.add('dark-theme');
+    } else {
+      document.documentElement.classList.remove('dark-theme');
+    }
+  }, [darkMode]);
+
   const formatLiveTime = (date: Date, format: '12h' | '24h') => {
     const hours = date.getHours();
     const minutes = String(date.getMinutes()).padStart(2, '0');
@@ -234,9 +275,14 @@ export default function App() {
         reviewSeconds: timer.reviewSeconds
       });
 
-      // Handle automatic transition to expiration screen
+      // Handle automatic transition to expiration screen or solution review
       if (timer.status === 'expired') {
-        // Just let it show expiration controls on screen
+        if (learningMode && (learningPhase === 'solve_yourself' || learningPhase === 'get_tips')) {
+          setLearningPhase('review_solution');
+          setTimeout(() => {
+            timer.start('custom', 10); // Start 10-minute solution review timer
+          }, 0);
+        }
       }
     });
 
@@ -252,7 +298,7 @@ export default function App() {
     return () => {
       unsubscribe();
     };
-  }, [soundOn]);
+  }, [soundOn, learningMode, learningPhase]);
 
   // Compute analytics
   const generalStats: GeneralStats = calculateGeneralStats(sessions);
@@ -270,6 +316,12 @@ export default function App() {
     rotateQuote();
     setActiveHint('');
     timerRef.current.start(selectedDifficulty, selectedDifficulty === 'custom' ? customMinutes : undefined);
+    
+    if (learningMode) {
+      setLearningPhase('solve_yourself');
+    } else {
+      setLearningPhase('none');
+    }
     setScreen('challenge');
   };
 
@@ -335,58 +387,7 @@ export default function App() {
     }
   };
 
-  // MOCK DATA INJECTOR (for demonstration & verification of stats)
-  const handleAddMockData = () => {
-    const now = new Date();
-    const mockSessions: SessionResult[] = [
-      {
-        id: 'mock1',
-        difficulty: 'medium',
-        durationSeconds: 40 * 60,
-        elapsedSeconds: 25 * 60 + 40,
-        status: 'solved',
-        date: new Date(now.getTime() - 86400000).toISOString(), // Yesterday
-        hintsUsed: 1,
-        pauseCount: 0,
-        breakdown: { thinkingSeconds: 8 * 60, codingSeconds: 15 * 60, reviewSeconds: 2 * 60 + 40 }
-      },
-      {
-        id: 'mock2',
-        difficulty: 'easy',
-        durationSeconds: 20 * 60,
-        elapsedSeconds: 12 * 60,
-        status: 'solved',
-        date: new Date(now.getTime() - 172800000).toISOString(), // 2 days ago
-        hintsUsed: 0,
-        pauseCount: 1,
-        breakdown: { thinkingSeconds: 3 * 60, codingSeconds: 7 * 60, reviewSeconds: 2 * 60 }
-      },
-      {
-        id: 'mock3',
-        difficulty: 'hard',
-        durationSeconds: 60 * 60,
-        elapsedSeconds: 58 * 60,
-        status: 'solved',
-        date: new Date(now.getTime() - 259200000).toISOString(), // 3 days ago
-        hintsUsed: 2,
-        pauseCount: 2,
-        breakdown: { thinkingSeconds: 20 * 60, codingSeconds: 30 * 60, reviewSeconds: 8 * 60 }
-      },
-      {
-        id: 'mock4',
-        difficulty: 'medium',
-        durationSeconds: 40 * 60,
-        elapsedSeconds: 42 * 60,
-        status: 'unsolved',
-        date: new Date(now.getTime() - 345600000).toISOString(), // 4 days ago
-        hintsUsed: 3,
-        pauseCount: 1,
-        breakdown: { thinkingSeconds: 15 * 60, codingSeconds: 20 * 60, reviewSeconds: 7 * 60 }
-      }
-    ];
 
-    saveSessionsToLocalStorage([...mockSessions, ...sessions]);
-  };
 
   const handleClearHistory = () => {
     if (!confirmClear) {
@@ -408,22 +409,33 @@ export default function App() {
         <button 
           className="exit-focus-floating-btn"
           onClick={() => setFocusMode(false)}
-          title="Exit Focus Mode"
+          title="Exit Zen Mode"
         >
-          👁 Exit Focus
+          👁 Exit Zen Mode
         </button>
       )}
       
       {/* 1. HEADER BAR */}
       <header className="timespot-header">
-        <div className="logo-section" onClick={() => setScreen('dashboard')}>
-          <div className="logo-icon">⏱</div>
+        <div className="logo-section" onClick={() => { setScreen('dashboard'); setMobileMenuOpen(false); }}>
+          <LogoIconSvg />
           <span className="logo-text">Beat The Clock</span>
         </div>
-        <div className="header-actions">
+        
+        {/* Mobile Hamburger navbar button */}
+        <button 
+          className="mobile-hamburger-btn"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label="Toggle Navigation Menu"
+        >
+          <span className="bar"></span>
+          <span className="bar"></span>
+        </button>
+
+        <div className={`header-actions ${mobileMenuOpen ? 'open' : ''}`}>
           <button 
             className={`toggle-btn ${soundOn ? 'active' : ''}`}
-            onClick={() => setSoundOn(!soundOn)}
+            onClick={() => { setSoundOn(!soundOn); setMobileMenuOpen(false); }}
             title="Toggle Sound Notifications"
             style={{ border: 'none', cursor: 'pointer' }}
           >
@@ -431,14 +443,29 @@ export default function App() {
           </button>
           <button 
             className={`toggle-btn ${focusMode ? 'active' : ''}`}
-            onClick={() => setFocusMode(!focusMode)}
-            title="Toggle Focus Mode (Hide distracting headers & details during challenge)"
+            onClick={() => { setFocusMode(!focusMode); setMobileMenuOpen(false); }}
+            title="Toggle Zen Mode (Hide distracting headers & details during challenge)"
             style={{ border: 'none', cursor: 'pointer' }}
           >
-            {focusMode ? '🧘 Focus Mode' : '👁 Standard'}
+            {focusMode ? '🧘 Zen Mode' : '👁 Focus Mode'}
           </button>
-          <a href="#stats" className="action-link" onClick={() => setScreen('dashboard')}>History</a>
-          <button className="action-btn-black" onClick={handleAddMockData}>Load Demo Stats</button>
+          <button 
+            className={`toggle-btn ${darkMode ? 'active' : ''}`}
+            onClick={() => { setDarkMode(!darkMode); setMobileMenuOpen(false); }}
+            title="Toggle Dark Mode"
+            style={{ border: 'none', cursor: 'pointer' }}
+          >
+            {darkMode ? '🌙 Dark' : '☀️ Light'}
+          </button>
+          <button 
+            className={`toggle-btn ${learningMode ? 'active' : ''}`}
+            onClick={() => { setLearningMode(!learningMode); setMobileMenuOpen(false); }}
+            title="Toggle Learning Mode (Progressive guidance & structured problem solving)"
+            style={{ border: 'none', cursor: 'pointer' }}
+          >
+            {learningMode ? '🎓 Learning Mode' : '📚 Standard Mode'}
+          </button>
+          <a href="#stats" className="action-link" onClick={() => { setScreen('dashboard'); setMobileMenuOpen(false); }}>History</a>
         </div>
       </header>
 
@@ -499,8 +526,12 @@ export default function App() {
             
             <div className="quote-display">
               <p>"{randomQuote}"</p>
-              <div className="add-city-trigger" onClick={handleStartChallenge}>
-                <span>Start Challenge</span> ➔
+              <div 
+                className="add-city-trigger btn-start-challenge" 
+                onClick={handleStartChallenge}
+                title={learningMode ? "Start Learning Session" : "Start Challenge"}
+              >
+                <span>{learningMode ? 'Start Learning Session' : 'Start Challenge'}</span> ➔
               </div>
             </div>
           </section>
@@ -609,7 +640,7 @@ export default function App() {
             </div>
             
             {sessions.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '30px', background: '#fff', borderRadius: 'var(--border-radius-medium)' }}>
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '30px', background: 'var(--panel-card-inner)', borderRadius: 'var(--border-radius-medium)' }}>
                 <p>No coding challenges attempted yet. Click <strong>"Load Demo Stats"</strong> or start a challenge to see analytics!</p>
               </div>
             ) : (
@@ -733,8 +764,22 @@ export default function App() {
       {/* SCREEN B: CHALLENGE / TIMER RUNNING */}
       {screen === 'challenge' && (
         <>
-          {/* Desktop-only challenge layout */}
+           {/* Desktop-only challenge layout */}
           <div className="desktop-clock-layout">
+            
+            {/* If learningMode is active, show custom Learning Mode Header */}
+            {learningMode && (
+              <div className="learning-header-banner">
+                <span className="learning-badge">🎓 LEARNING MODE</span>
+                <span className="learning-phase-title">
+                  {learningPhase === 'solve_yourself' && '🔍 Stage 1: Solve Independently'}
+                  {learningPhase === 'get_tips' && '💡 Stage 2: Progressive Guidance & Tips'}
+                  {learningPhase === 'review_solution' && '📖 Stage 3: Review Solution (Timer Stopped)'}
+                  {learningPhase === 'recall_timer' && '⚡ Stage 4: Recall Mode (Implement from Memory)'}
+                </span>
+              </div>
+            )}
+
             {/* Active Timer Display */}
             <section className="clock-section">
               <div className={`clock-digits ${timerState.status === 'expired' ? 'clock-digits-expired' : ''}`}>
@@ -754,117 +799,193 @@ export default function App() {
               </div>
             </section>
 
-            {/* Coaching / Tip Banner */}
-            <section className="info-section">
-              {activeHint ? (
-                <div className="coaching-alert-card">
-                  <span className="coaching-emoji">📢</span>
-                  <div className="coaching-details">
-                    <span className="coaching-title">Coach Directive</span>
-                    <span className="coaching-body">{activeHint}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="coaching-alert-card" style={{ background: '#f4f4f5', border: '1px solid #e4e4e7' }}>
-                  <span className="coaching-emoji" style={{ filter: 'grayscale(1)' }}>🧠</span>
-                  <div className="coaching-details">
-                    <span className="coaching-title" style={{ color: 'var(--text-secondary)' }}>Coach Status</span>
-                    <span className="coaching-body" style={{ color: 'var(--text-secondary)' }}>
-                      Listening. Coach alerts trigger automatically as you progress.
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <div className="quote-display" style={{ minHeight: '100px' }}>
-                <p>Current coaching messages are focused on guidance, NOT revealing solutions.</p>
-                <div className="add-city-trigger" onClick={handleRequestHint}>
-                  <span>💡 Get Coach Hint</span>
-                </div>
-              </div>
-            </section>
-
-            {/* Dynamic Stage Selection Cards */}
-            <section className="bottom-cards-row">
-              {timerRef.current.phases.map((phase, idx) => (
-                <div 
-                  key={phase.name}
-                  className={`timespot-card ${timerState.currentPhaseIndex === idx ? 'active' : ''}`}
-                  onClick={() => timerRef.current.selectPhase(idx)}
-                >
-                  <div className="card-header">
-                    <span className="card-title">PHASE {idx + 1}</span>
-                    <span className="card-badge">RECOMMENDED</span>
-                  </div>
-                  <div className="card-value" style={{ fontSize: '1.2rem', marginTop: '10px' }}>
-                    {phase.name}
-                  </div>
-                  <div className="card-footer">
-                    <span>Mins: {phase.recommendedRange[0]}-{phase.recommendedRange[1]}</span>
-                  </div>
-                </div>
-              ))}
-            </section>
-
-            {/* Control Bar */}
-            <section className="controls-panel">
-              {timerState.status === 'running' && (
-                <>
-                  <button className="control-btn btn-secondary" onClick={handlePause}>
-                    ⏸ Pause Timer
-                  </button>
-                  <button className="control-btn btn-primary" onClick={handleComplete}>
-                    🏁 Complete & Solved
-                  </button>
-                  <button className="control-btn btn-danger" onClick={handleGiveUp}>
-                    🏳️ Give Up
-                  </button>
-                </>
-              )}
-
-              {timerState.status === 'paused' && (
-                <>
-                  <button className="control-btn btn-primary" onClick={handleResume}>
-                    ▶ Resume Timer
-                  </button>
-                  <button className="control-btn btn-danger" onClick={handleGiveUp}>
-                    🏳️ Give Up
-                  </button>
-                </>
-              )}
-
-              {timerState.status === 'expired' && (
-                <div style={{ textAlign: 'center', width: '100%', background: '#fee2e2', padding: '20px', borderRadius: 'var(--border-radius-medium)', display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center' }}>
-                  <h3 style={{ color: 'var(--color-hard)', fontWeight: 700 }}>⏰ Time's Up! Did you solve the challenge?</h3>
-                  <div style={{ display: 'flex', gap: '15px' }}>
-                    <button className="control-btn btn-primary" onClick={() => handleExpiredSolve(true)}>
-                      Yes, Solved
-                    </button>
-                    <button className="control-btn btn-danger" onClick={() => handleExpiredSolve(false)}>
-                      No, Unsolved
-                    </button>
-                    <button className="control-btn btn-secondary" onClick={handleContinueWithoutTimer}>
-                      Continue Without Timer
+            {learningMode ? (
+              <section className="learning-mode-console">
+                {learningPhase === 'solve_yourself' && (
+                  <div className="learning-card">
+                    <h3>Try solving it yourself!</h3>
+                    <p>Focus on understanding the problem, identifying patterns, and writing an initial approach. Don't look at references yet.</p>
+                    <button className="control-btn btn-primary" onClick={() => setLearningPhase('get_tips')}>
+                      💡 I'm Stuck (Get Hints)
                     </button>
                   </div>
-                </div>
-              )}
-            </section>
+                )}
+
+                {learningPhase === 'get_tips' && (
+                  <div className="learning-card">
+                    <h3>Progressive Hints & Tips</h3>
+                    <ul className="learning-hints-list">
+                      <li><strong>Hint 1:</strong> Try tracing the example input by hand first. What is the brute-force way?</li>
+                      <li><strong>Hint 2:</strong> Look at the time/space constraints. Can we use a Hash Map or sliding window?</li>
+                      <li><strong>Hint 3:</strong> Draw the states or write down pseudocode before implementing.</li>
+                    </ul>
+                    <div style={{ display: 'flex', gap: '15px', marginTop: '15px' }}>
+                      <button className="control-btn btn-danger" onClick={() => {
+                        timerRef.current.start('custom', 10);
+                        setLearningPhase('review_solution');
+                      }}>
+                        📖 Still Stuck (Check Solution)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {learningPhase === 'review_solution' && (
+                  <div className="learning-card" style={{ textAlign: 'center' }}>
+                    <h3>Review Solution Independently</h3>
+                    <p style={{ margin: '15px 0', fontSize: '0.95rem' }}>
+                      Go check the official LeetCode editorial, discussion forums, or other external references by yourself.
+                      Use this time to understand the correct approach, time/space complexity, and implementation patterns.
+                    </p>
+                    <div style={{ marginTop: '20px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '20px', width: '100%' }}>
+                      <p style={{ fontWeight: 600, color: 'var(--color-custom)' }}>Ready to test your recall?</p>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>We will start a 15-minute recall timer. All references should be closed.</p>
+                      <button className="control-btn btn-primary" style={{ marginTop: '15px', marginLeft: 'auto', marginRight: 'auto' }} onClick={() => {
+                        timerRef.current.start('custom', 15);
+                        setLearningPhase('recall_timer');
+                      }}>
+                        ⚡ Practice Solution (Recall Timer)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {learningPhase === 'recall_timer' && (
+                  <div className="learning-card">
+                    <h3>Recall Mode: Code from memory</h3>
+                    <p>The solution is now hidden. Implement it yourself without looking back. Focus on replicating the logic and cleaning up any edge cases.</p>
+                    <div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}>
+                      <button className="control-btn btn-primary" onClick={handleComplete}>
+                        🏁 Solved from Memory
+                      </button>
+                      <button className="control-btn btn-danger" onClick={handleGiveUp}>
+                        🏳️ Give Up
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : (
+              <>
+                {/* Coaching / Tip Banner */}
+                <section className="info-section">
+                  {activeHint ? (
+                    <div className="coaching-alert-card">
+                      <span className="coaching-emoji">📢</span>
+                      <div className="coaching-details">
+                        <span className="coaching-title">Coach Directive</span>
+                        <span className="coaching-body">{activeHint}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="coaching-alert-card" style={{ background: '#f4f4f5', border: '1px solid #e4e4e7' }}>
+                      <span className="coaching-emoji" style={{ filter: 'grayscale(1)' }}>🧠</span>
+                      <div className="coaching-details">
+                        <span className="coaching-title" style={{ color: 'var(--text-secondary)' }}>Coach Status</span>
+                        <span className="coaching-body" style={{ color: 'var(--text-secondary)' }}>
+                          Listening. Coach alerts trigger automatically as you progress.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="quote-display" style={{ minHeight: '100px' }}>
+                    <p>Current coaching messages are focused on guidance, NOT revealing solutions.</p>
+                    <div className="add-city-trigger" onClick={handleRequestHint}>
+                      <span>💡 Get Coach Hint</span>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Dynamic Stage Selection Cards */}
+                <section className="bottom-cards-row">
+                  {timerRef.current.phases.map((phase, idx) => (
+                    <div 
+                      key={phase.name}
+                      className={`timespot-card ${timerState.currentPhaseIndex === idx ? 'active' : ''}`}
+                      onClick={() => timerRef.current.selectPhase(idx)}
+                    >
+                      <div className="card-header">
+                        <span className="card-title">PHASE {idx + 1}</span>
+                        <span className="card-badge">RECOMMENDED</span>
+                      </div>
+                      <div className="card-value" style={{ fontSize: '1.2rem', marginTop: '10px' }}>
+                        {phase.name}
+                      </div>
+                      <div className="card-footer">
+                        <span>Mins: {phase.recommendedRange[0]}-{phase.recommendedRange[1]}</span>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+
+                {/* Control Bar */}
+                <section className="controls-panel">
+                  {timerState.status === 'running' && (
+                    <>
+                      <button className="control-btn btn-secondary" onClick={handlePause}>
+                        ⏸ Pause Timer
+                      </button>
+                      <button className="control-btn btn-primary" onClick={handleComplete}>
+                        🏁 Complete & Solved
+                      </button>
+                      <button className="control-btn btn-danger" onClick={handleGiveUp}>
+                        🏳️ Give Up
+                      </button>
+                    </>
+                  )}
+
+                  {timerState.status === 'paused' && (
+                    <>
+                      <button className="control-btn btn-primary" onClick={handleResume}>
+                        ▶ Resume Timer
+                      </button>
+                      <button className="control-btn btn-danger" onClick={handleGiveUp}>
+                        🏳️ Give Up
+                      </button>
+                    </>
+                  )}
+
+                  {timerState.status === 'expired' && (
+                    <div style={{ textAlign: 'center', width: '100%', background: '#fee2e2', padding: '20px', borderRadius: 'var(--border-radius-medium)', display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center' }}>
+                      <h3 style={{ color: 'var(--color-hard)', fontWeight: 700 }}>⏰ Time's Up! Did you solve the challenge?</h3>
+                      <div style={{ display: 'flex', gap: '15px' }}>
+                        <button className="control-btn btn-primary" onClick={() => handleExpiredSolve(true)}>
+                          Yes, Solved
+                        </button>
+                        <button className="control-btn btn-danger" onClick={() => handleExpiredSolve(false)}>
+                          No, Unsolved
+                        </button>
+                        <button className="control-btn btn-secondary" onClick={handleContinueWithoutTimer}>
+                          Continue Without Timer
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
           </div>
 
           {/* Mobile-only challenge layout (TimeMoto Mockup Style) */}
           <div className="mobile-clock-layout">
             <header className="mobile-clock-header">
-              <span className="mobile-logo">⏱ TimeMoto</span>
-              <div className="mobile-hamburger">
+              <span className="mobile-logo" onClick={() => setScreen('dashboard')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <LogoIconSvg /> Beat The Clock
+              </span>
+              <div className="mobile-hamburger" onClick={() => setScreen('dashboard')} style={{ cursor: 'pointer' }} title="Exit Challenge">
                 <span></span>
                 <span></span>
               </div>
             </header>
             
             <div className="mobile-sub-header">
-              <span className="mobile-sub-title">CLOCK IN/OUT</span>
-              <span className="mobile-sub-desc">Head Office</span>
+              <span className="mobile-sub-title">
+                {learningMode ? '🎓 LEARNING SESSION' : '⏱ ACTIVE CHALLENGE'}
+              </span>
+              <span className="mobile-sub-desc">
+                {focusMode ? 'Zen Mode' : 'Focus Mode'} • {timerState.difficulty.toUpperCase()}
+              </span>
             </div>
 
             {/* Circular Dial Timer */}
