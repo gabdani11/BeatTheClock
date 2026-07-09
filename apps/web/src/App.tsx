@@ -179,6 +179,7 @@ export default function App() {
   
   // Timer state replication for React rendering
   const timerRef = useRef<BeatTheClockTimer>(new BeatTheClockTimer());
+  const lastExpiredTimerIdRef = useRef<string | null>(null);
   const [timerState, setTimerState] = useState({
     status: 'idle' as ChallengeStatus,
     difficulty: 'medium' as Difficulty,
@@ -277,6 +278,22 @@ export default function App() {
 
       // Handle automatic transition to expiration screen or solution review
       if (timer.status === 'expired') {
+        if (lastExpiredTimerIdRef.current !== timer.id) {
+          lastExpiredTimerIdRef.current = timer.id;
+          
+          if (soundOn) {
+            playChimeSound();
+            setTimeout(playChimeSound, 250);
+          }
+
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification("Time's Up! ⏰", {
+              body: `Your ${timer.difficulty} challenge time has expired.`,
+              requireInteraction: true
+            });
+          }
+        }
+
         if (learningMode && (learningPhase === 'solve_yourself' || learningPhase === 'get_tips')) {
           setLearningPhase('review_solution');
           setTimeout(() => {
@@ -286,6 +303,14 @@ export default function App() {
       }
     });
 
+    // Sync timer on visibility change (e.g. when switching back to this tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        timer.sync();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     // Custom coaching alerts
     timer.onCoachingAlert = (emoji, msg) => {
       if (soundOn) {
@@ -293,10 +318,18 @@ export default function App() {
       }
       // Set the active hint display or flash it
       setActiveHint(`${emoji} ${msg}`);
+
+      // Desktop notification for coaching tips if in background
+      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification("Coach Alert", {
+          body: `${emoji} ${msg}`
+        });
+      }
     };
 
     return () => {
       unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [soundOn, learningMode, learningPhase]);
 
@@ -304,6 +337,36 @@ export default function App() {
   const generalStats: GeneralStats = calculateGeneralStats(sessions);
   const timeAnalytics: TimeAnalytics = calculateTimeAnalytics(sessions);
   const weeklyProgress: WeeklyProgress = calculateWeeklyProgress(sessions);
+
+  // Update document title dynamically based on timer state
+  useEffect(() => {
+    const { status, remainingSeconds } = timerState;
+    
+    if (status === 'expired') {
+      let isAlert = true;
+      const titleInterval = setInterval(() => {
+        document.title = isAlert ? '⚠️ TIME\'S UP! ⚠️' : 'Beat the Clock';
+        isAlert = !isAlert;
+      }, 1000);
+      
+      return () => {
+        clearInterval(titleInterval);
+        document.title = 'Beat the Clock';
+      };
+    }
+    
+    if (status === 'idle') {
+      document.title = 'Beat the Clock';
+    } else if (status === 'paused') {
+      const formatted = formatTime(remainingSeconds);
+      document.title = `[Paused] ${formatted} | Beat the Clock`;
+    } else if (status === 'running') {
+      const formatted = formatTime(remainingSeconds);
+      document.title = `[${formatted}] Beat the Clock`;
+    } else if (status === 'completed') {
+      document.title = '🎉 Completed! | Beat the Clock';
+    }
+  }, [timerState.status, timerState.remainingSeconds]);
 
   // Home Page logic: cycle random quotes
   const rotateQuote = () => {
@@ -323,6 +386,13 @@ export default function App() {
       setLearningPhase('none');
     }
     setScreen('challenge');
+
+    // Request notification permission if needed
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(err => {
+        console.error('Error requesting notification permission:', err);
+      });
+    }
   };
 
   // 2. PAUSE & RESUME

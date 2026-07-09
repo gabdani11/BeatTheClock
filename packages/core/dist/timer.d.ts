@@ -16,6 +16,8 @@ export declare class BeatTheClockTimer {
     isManualPhase: boolean;
     private intervalId;
     private lastCoachingMessageText;
+    private lastResumeTime;
+    private accumulatedElapsedMs;
     private listeners;
     onCoachingAlert?: (emoji: string, msg: string) => void;
     constructor();
@@ -32,6 +34,8 @@ export declare class BeatTheClockTimer {
     incrementHints(): void;
     private startInterval;
     private stopInterval;
+    private getAbsoluteElapsedSeconds;
+    sync(): void;
     private tick;
     private trackTime;
     private getBreakdown;

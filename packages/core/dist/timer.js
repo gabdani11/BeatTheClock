@@ -18,6 +18,8 @@ export class BeatTheClockTimer {
     isManualPhase = false;
     intervalId = null;
     lastCoachingMessageText = '';
+    lastResumeTime = 0;
+    accumulatedElapsedMs = 0;
     // Event listeners
     listeners = [];
     onCoachingAlert;
@@ -56,6 +58,8 @@ export class BeatTheClockTimer {
         this.reviewSeconds = 0;
         this.isManualPhase = false;
         this.status = 'running';
+        this.accumulatedElapsedMs = 0;
+        this.lastResumeTime = Date.now();
         // Get initial coaching message
         const msg = getCoachingMessage(this.difficulty, 0, this.durationSeconds);
         this.lastCoachingMessageText = msg.message;
@@ -67,6 +71,7 @@ export class BeatTheClockTimer {
             return;
         this.status = 'paused';
         this.pauseCount++;
+        this.accumulatedElapsedMs += Date.now() - this.lastResumeTime;
         this.stopInterval();
         this.notify();
     }
@@ -74,6 +79,7 @@ export class BeatTheClockTimer {
         if (this.status !== 'paused')
             return;
         this.status = 'running';
+        this.lastResumeTime = Date.now();
         this.startInterval();
         this.notify();
     }
@@ -153,35 +159,57 @@ export class BeatTheClockTimer {
             this.intervalId = null;
         }
     }
+    getAbsoluteElapsedSeconds() {
+        if (this.status === 'running') {
+            return Math.floor((this.accumulatedElapsedMs + (Date.now() - this.lastResumeTime)) / 1000);
+        }
+        return Math.floor(this.accumulatedElapsedMs / 1000);
+    }
+    sync() {
+        this.tick();
+    }
     tick() {
-        if (this.remainingSeconds <= 1) {
-            this.remainingSeconds = 0;
-            this.elapsedSeconds++;
-            this.trackTime();
-            this.status = 'expired';
-            this.stopInterval();
-            this.notify();
+        const totalElapsed = this.getAbsoluteElapsedSeconds();
+        const secondsToAdvance = totalElapsed - this.elapsedSeconds;
+        if (secondsToAdvance <= 0) {
             return;
         }
-        this.remainingSeconds--;
-        this.elapsedSeconds++;
-        this.trackTime();
-        // Check if we should update phase automatically based on elapsed time (in minutes)
-        if (!this.isManualPhase) {
-            const elapsedMinutes = Math.floor(this.elapsedSeconds / 60);
-            let targetPhaseIndex = 0;
-            for (let i = 0; i < this.phases.length; i++) {
-                const range = this.phases[i].recommendedRange;
-                if (elapsedMinutes >= range[0] && elapsedMinutes < range[1]) {
-                    targetPhaseIndex = i;
+        for (let i = 0; i < secondsToAdvance; i++) {
+            if (this.remainingSeconds <= 0) {
+                this.status = 'expired';
+                this.stopInterval();
+                this.notify();
+                return;
+            }
+            if (this.remainingSeconds === 1) {
+                this.remainingSeconds = 0;
+                this.elapsedSeconds++;
+                this.trackTime();
+                this.status = 'expired';
+                this.stopInterval();
+                this.notify();
+                return;
+            }
+            this.remainingSeconds--;
+            this.elapsedSeconds++;
+            this.trackTime();
+            // Check if we should update phase automatically based on elapsed time (in minutes)
+            if (!this.isManualPhase) {
+                const elapsedMinutes = Math.floor(this.elapsedSeconds / 60);
+                let targetPhaseIndex = 0;
+                for (let j = 0; j < this.phases.length; j++) {
+                    const range = this.phases[j].recommendedRange;
+                    if (elapsedMinutes >= range[0] && elapsedMinutes < range[1]) {
+                        targetPhaseIndex = j;
+                    }
                 }
-            }
-            // If the elapsed time has exceeded the recommended range, lock to the last phase
-            if (elapsedMinutes >= this.phases[this.phases.length - 1].recommendedRange[1]) {
-                targetPhaseIndex = this.phases.length - 1;
-            }
-            if (targetPhaseIndex !== this.currentPhaseIndex) {
-                this.currentPhaseIndex = targetPhaseIndex;
+                // If the elapsed time has exceeded the recommended range, lock to the last phase
+                if (elapsedMinutes >= this.phases[this.phases.length - 1].recommendedRange[1]) {
+                    targetPhaseIndex = this.phases.length - 1;
+                }
+                if (targetPhaseIndex !== this.currentPhaseIndex) {
+                    this.currentPhaseIndex = targetPhaseIndex;
+                }
             }
         }
         // Check for coaching message alert
@@ -216,6 +244,9 @@ export class BeatTheClockTimer {
         };
     }
     cleanup() {
+        if (this.status === 'running') {
+            this.tick();
+        }
         this.stopInterval();
     }
     getCoachingMessage() {

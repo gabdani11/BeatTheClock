@@ -23,6 +23,8 @@ export class BeatTheClockTimer {
 
   private intervalId: any = null;
   private lastCoachingMessageText: string = '';
+  private lastResumeTime: number = 0;
+  private accumulatedElapsedMs: number = 0;
   
   // Event listeners
   private listeners: (() => void)[] = [];
@@ -67,6 +69,8 @@ export class BeatTheClockTimer {
     this.reviewSeconds = 0;
     this.isManualPhase = false;
     this.status = 'running';
+    this.accumulatedElapsedMs = 0;
+    this.lastResumeTime = Date.now();
 
     // Get initial coaching message
     const msg = getCoachingMessage(this.difficulty, 0, this.durationSeconds);
@@ -80,6 +84,7 @@ export class BeatTheClockTimer {
     if (this.status !== 'running') return;
     this.status = 'paused';
     this.pauseCount++;
+    this.accumulatedElapsedMs += Date.now() - this.lastResumeTime;
     this.stopInterval();
     this.notify();
   }
@@ -87,6 +92,7 @@ export class BeatTheClockTimer {
   public resume() {
     if (this.status !== 'paused') return;
     this.status = 'running';
+    this.lastResumeTime = Date.now();
     this.startInterval();
     this.notify();
   }
@@ -178,38 +184,65 @@ export class BeatTheClockTimer {
     }
   }
 
+  private getAbsoluteElapsedSeconds(): number {
+    if (this.status === 'running') {
+      return Math.floor((this.accumulatedElapsedMs + (Date.now() - this.lastResumeTime)) / 1000);
+    }
+    return Math.floor(this.accumulatedElapsedMs / 1000);
+  }
+
+  public sync() {
+    this.tick();
+  }
+
   private tick() {
-    if (this.remainingSeconds <= 1) {
-      this.remainingSeconds = 0;
-      this.elapsedSeconds++;
-      this.trackTime();
-      this.status = 'expired';
-      this.stopInterval();
-      this.notify();
+    const totalElapsed = this.getAbsoluteElapsedSeconds();
+    const secondsToAdvance = totalElapsed - this.elapsedSeconds;
+
+    if (secondsToAdvance <= 0) {
       return;
     }
 
-    this.remainingSeconds--;
-    this.elapsedSeconds++;
-    this.trackTime();
+    for (let i = 0; i < secondsToAdvance; i++) {
+      if (this.remainingSeconds <= 0) {
+        this.status = 'expired';
+        this.stopInterval();
+        this.notify();
+        return;
+      }
 
-    // Check if we should update phase automatically based on elapsed time (in minutes)
-    if (!this.isManualPhase) {
-      const elapsedMinutes = Math.floor(this.elapsedSeconds / 60);
-      let targetPhaseIndex = 0;
-      for (let i = 0; i < this.phases.length; i++) {
-        const range = this.phases[i].recommendedRange;
-        if (elapsedMinutes >= range[0] && elapsedMinutes < range[1]) {
-          targetPhaseIndex = i;
+      if (this.remainingSeconds === 1) {
+        this.remainingSeconds = 0;
+        this.elapsedSeconds++;
+        this.trackTime();
+        this.status = 'expired';
+        this.stopInterval();
+        this.notify();
+        return;
+      }
+
+      this.remainingSeconds--;
+      this.elapsedSeconds++;
+      this.trackTime();
+
+      // Check if we should update phase automatically based on elapsed time (in minutes)
+      if (!this.isManualPhase) {
+        const elapsedMinutes = Math.floor(this.elapsedSeconds / 60);
+        let targetPhaseIndex = 0;
+        for (let j = 0; j < this.phases.length; j++) {
+          const range = this.phases[j].recommendedRange;
+          if (elapsedMinutes >= range[0] && elapsedMinutes < range[1]) {
+            targetPhaseIndex = j;
+          }
         }
-      }
-      // If the elapsed time has exceeded the recommended range, lock to the last phase
-      if (elapsedMinutes >= this.phases[this.phases.length - 1].recommendedRange[1]) {
-        targetPhaseIndex = this.phases.length - 1;
-      }
+        // If the elapsed time has exceeded the recommended range, lock to the last phase
+        if (elapsedMinutes >= this.phases[this.phases.length - 1].recommendedRange[1]) {
+          targetPhaseIndex = this.phases.length - 1;
+        }
 
-      if (targetPhaseIndex !== this.currentPhaseIndex) {
-        this.currentPhaseIndex = targetPhaseIndex;
+        if (targetPhaseIndex !== this.currentPhaseIndex) {
+          this.currentPhaseIndex = targetPhaseIndex;
+        }
       }
     }
 
@@ -247,6 +280,9 @@ export class BeatTheClockTimer {
   }
 
   private cleanup() {
+    if (this.status === 'running') {
+      this.tick();
+    }
     this.stopInterval();
   }
 
