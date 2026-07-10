@@ -13,6 +13,7 @@ import {
   COACHING_HINTS,
   DEFAULT_TIMES
 } from '@leetcode-timer/core';
+import Whiteboard from './Whiteboard';
 
 // Synthesize chime sound using Web Audio API
 function playChimeSound() {
@@ -197,6 +198,9 @@ export default function App() {
   // active hint dialog
   const [activeHint, setActiveHint] = useState<string>('');
 
+  // Sketchpad & Trace whiteboard visibility
+  const [showWhiteboard, setShowWhiteboard] = useState<boolean>(false);
+
   // active session result for summary screen
   const [activeResult, setActiveResult] = useState<SessionResult | null>(null);
 
@@ -378,6 +382,7 @@ export default function App() {
   const handleStartChallenge = () => {
     rotateQuote();
     setActiveHint('');
+    setShowWhiteboard(false);
     timerRef.current.start(selectedDifficulty, selectedDifficulty === 'custom' ? customMinutes : undefined);
     
     if (learningMode) {
@@ -535,6 +540,16 @@ export default function App() {
           >
             {learningMode ? '🎓 Learning Mode' : '📚 Standard Mode'}
           </button>
+          {screen === 'challenge' && (
+            <button 
+              className={`toggle-btn ${showWhiteboard ? 'active' : ''}`}
+              onClick={() => { setShowWhiteboard(!showWhiteboard); setMobileMenuOpen(false); }}
+              title="Toggle Sketchpad & Trace Table"
+              style={{ border: 'none', cursor: 'pointer' }}
+            >
+              {showWhiteboard ? '🎨 Hide Sketchpad' : '🎨 Sketch & Plan'}
+            </button>
+          )}
           <a href="#stats" className="action-link" onClick={() => { setScreen('dashboard'); setMobileMenuOpen(false); }}>History</a>
         </div>
       </header>
@@ -835,7 +850,7 @@ export default function App() {
       {screen === 'challenge' && (
         <>
            {/* Desktop-only challenge layout */}
-          <div className="desktop-clock-layout">
+          <div className={`desktop-clock-layout ${showWhiteboard ? 'split-active' : ''}`}>
             
             {/* If learningMode is active, show custom Learning Mode Header */}
             {learningMode && (
@@ -850,8 +865,10 @@ export default function App() {
               </div>
             )}
 
-            {/* Active Timer Display */}
-            <section className="clock-section">
+            <div className="challenge-workspace">
+              <div className="challenge-main-content">
+                {/* Active Timer Display */}
+                <section className="clock-section">
               <div className={`clock-digits ${timerState.status === 'expired' ? 'clock-digits-expired' : ''}`}>
                 {formatTime(timerState.remainingSeconds).split('').map((char, index) => (
                   <AnimatedDigit key={`active-${index}`} value={char} />
@@ -999,6 +1016,13 @@ export default function App() {
                       <button className="control-btn btn-primary" onClick={handleComplete}>
                         🏁 Complete & Solved
                       </button>
+                      <button 
+                        className={`control-btn ${showWhiteboard ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setShowWhiteboard(!showWhiteboard)}
+                        title="Toggle Sketchpad / Trace Table"
+                      >
+                        🎨 Sketch & Plan
+                      </button>
                       <button className="control-btn btn-danger" onClick={handleGiveUp}>
                         🏳️ Give Up
                       </button>
@@ -1009,6 +1033,13 @@ export default function App() {
                     <>
                       <button className="control-btn btn-primary" onClick={handleResume}>
                         ▶ Resume Timer
+                      </button>
+                      <button 
+                        className={`control-btn ${showWhiteboard ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setShowWhiteboard(!showWhiteboard)}
+                        title="Toggle Sketchpad / Trace Table"
+                      >
+                        🎨 Sketch & Plan
                       </button>
                       <button className="control-btn btn-danger" onClick={handleGiveUp}>
                         🏳️ Give Up
@@ -1035,6 +1066,11 @@ export default function App() {
                 </section>
               </>
             )}
+              </div>
+              {showWhiteboard && (
+                <Whiteboard darkMode={darkMode} onClose={() => setShowWhiteboard(false)} />
+              )}
+            </div>
           </div>
 
           {/* Mobile-only challenge layout (TimeMoto Mockup Style) */}
